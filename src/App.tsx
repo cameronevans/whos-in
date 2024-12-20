@@ -1,24 +1,29 @@
-import "./App.css";
 import {
   keepPreviousData,
   QueryClient,
   QueryClientProvider,
   QueryFunctionContext,
+  useIsRestoring,
 } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { axiosInstance } from "./api/axios";
 import { Whosin } from "./components/whosin";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
+import { stringify, parse } from "zipson";
 
 axiosInstance.defaults.baseURL = "/api";
 axiosInstance.defaults.headers.common["authorization"] =
-  "Bearer BQAMeTnwHnLaP62idYuv9kW1o8vn2LD-5e2puYuBJf5UsFsYMs1z5oieGJ37ZyEA3XLtEZKKFXv4ibmEAPFpGiqRQBY8xwdpqIdLODZwaiGd4ODRV50";
+  "Discogs token=ZDSgbRINKDnoEqUgRgynEoVbFQFYScLjZKmVnfhJ";
+
+export let remaining = 60;
 
 export const queryFn = async <T,>({
   queryKey,
   signal,
 }: QueryFunctionContext) => {
   const [key, params = {}] = queryKey as [string, Record<string, string>];
-  const { data } = await axiosInstance.get<T>(key, {
+  const { data, headers } = await axiosInstance.get<T>(key, {
     ...params,
     paramsSerializer: (p) => {
       const search = new URLSearchParams(p);
@@ -26,13 +31,16 @@ export const queryFn = async <T,>({
     },
     signal,
   });
+  remaining = headers["x-discogs-ratelimit-remaining"];
   return data;
 };
 
-const client = new QueryClient({
+const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn,
+      networkMode: "offlineFirst",
+      gcTime: 1000 * 60 * 60 * 24,
       staleTime: Infinity,
       refetchOnMount: false,
       refetchOnReconnect: false,
@@ -43,12 +51,32 @@ const client = new QueryClient({
   },
 });
 
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+  serialize: stringify,
+  deserialize: parse,
+});
+
+const Wrapper = () => {
+  const isRestoring = useIsRestoring();
+  return !isRestoring ? <Whosin /> : "restoring...";
+};
+
 function App() {
   return (
-    <QueryClientProvider client={client}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister }}
+      onSuccess={() => {
+        // resume mutations after initial restore from localStorage was successful
+        queryClient.resumePausedMutations().then(() => {
+          queryClient.invalidateQueries();
+        });
+      }}
+    >
       <ReactQueryDevtools initialIsOpen />
-      <Whosin />
-    </QueryClientProvider>
+      <Wrapper />
+    </PersistQueryClientProvider>
   );
 }
 

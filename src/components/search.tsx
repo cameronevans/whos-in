@@ -1,23 +1,47 @@
 import { Combobox, createListCollection } from "@ark-ui/react";
-import { Portal } from "@ark-ui/react";
 import { useMemo } from "react";
-import { useSearch } from "../api/hooks";
 import { useDebounce } from "../hooks/use-debounce";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { css } from "../../styled-system/css";
+import { ark } from "@ark-ui/react/factory";
+import { styled } from "../../styled-system/jsx";
+// import { input } from "../../styled-system/recipes";
+
+// export const Input = styled(ark.input, input);
+
+const container = css({
+  display: "inline-flex",
+  gap: 4,
+});
 
 export const Search = ({
   onSelect,
 }: {
   onSelect: (details: Combobox.ValueChangeDetails) => void;
 }) => {
+  const queryClient = useQueryClient();
   const [input, setInput] = useDebounce<string>("", 300);
-  const { data: { artists: { items } = {} } = {} } = useSearch(
-    { params: { type: ["artist"], q: input } },
-    { enabled: !!input }
-  );
+  const { data: { results: items } = {} } = useQuery<{
+    results: {
+      id: number;
+      thumb: string;
+      title: string;
+    }[];
+  }>({
+    queryKey: [
+      "/database/search",
+      { params: { query: input, type: "artist" } },
+    ],
+    // enabled: !!input,
+    enabled: !queryClient.getQueryData([
+      "/database/search",
+      { params: { query: input, type: "artist" } },
+    ]),
+  });
 
   const collection = useMemo(() => {
     return createListCollection({
-      items: items?.map(({ name, id }) => ({ value: id, label: name })) ?? [],
+      items: items?.map(({ title, id }) => ({ value: id, label: title })) ?? [],
     });
   }, [items]);
 
@@ -27,35 +51,51 @@ export const Search = ({
 
   return (
     <Combobox.Root
-      collection={collection}
+      className={css({
+        width: "md",
+        p: 8,
+      })}
+      multiple
       onInputValueChange={handleInputChange}
+      collection={collection}
       onValueChange={onSelect}
     >
-      <Combobox.Label>Artist</Combobox.Label>
-      <Combobox.Control>
-        <Combobox.Input />
+      <Combobox.Control className={container}>
+        <Combobox.Input
+          // placeholder={}
+          className={css({
+            borderColor: "neutral.700",
+            border: "1px solid",
+            borderRadius: "md",
+            px: 4,
+          })}
+        ></Combobox.Input>
         <Combobox.Trigger>Open</Combobox.Trigger>
         <Combobox.ClearTrigger>Clear</Combobox.ClearTrigger>
       </Combobox.Control>
-      <Portal>
-        <Combobox.Positioner>
-          <Combobox.Content>
-            <Combobox.ItemGroup>
-              <Combobox.ItemGroupLabel>Artists</Combobox.ItemGroupLabel>
-              {collection.items.map(({ value, label }) => (
-                <Combobox.Item
-                  key={value}
-                  item={{ value, label }}
-                  style={{ display: "flex", gap: "0.5rem" }}
-                >
-                  <Combobox.ItemText>{label}</Combobox.ItemText>
-                  <Combobox.ItemIndicator>✓</Combobox.ItemIndicator>
-                </Combobox.Item>
-              ))}
-            </Combobox.ItemGroup>
-          </Combobox.Content>
-        </Combobox.Positioner>
-      </Portal>
+      <Combobox.Positioner>
+        <Combobox.Content
+          className={css({
+            background: "neutral.800",
+            borderColor: "neutral.700",
+            border: "1px solid",
+            borderRadius: "md",
+            p: 4,
+          })}
+        >
+          <Combobox.List />
+          <Combobox.ItemGroup
+            className={css({ display: "flex", flexDir: "column" })}
+          >
+            {collection.items.map((item) => (
+              <Combobox.Item key={item.value} item={item} className={container}>
+                <Combobox.ItemText>{item.label}</Combobox.ItemText>
+                <Combobox.ItemIndicator>✓</Combobox.ItemIndicator>
+              </Combobox.Item>
+            ))}
+          </Combobox.ItemGroup>
+        </Combobox.Content>
+      </Combobox.Positioner>
     </Combobox.Root>
   );
 };
